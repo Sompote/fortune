@@ -67,7 +67,14 @@ export const toolDefs = {
     }),
     handler: async (a: any) => {
       const { user_id, birth, ...rest } = a
-      const b = birth ? { ...birth, timeKnown: birth.timeKnown !== false && birth.hour !== undefined } : undefined
+      // Models often save birth details one field per call; keep the time and province
+      // from earlier calls for the same date unless this call says the time is unknown.
+      const prev = birth ? (await loadUser(user_id))?.birth : undefined
+      const sameDate = prev && prev.year === birth.year && prev.era === birth.era && prev.month === birth.month && prev.day === birth.day
+      const merged = sameDate
+        ? { ...prev, timeKnown: undefined, ...birth, ...(birth.timeKnown === false ? { hour: undefined, minute: undefined } : {}) }
+        : birth
+      const b = merged ? { ...merged, timeKnown: merged.timeKnown !== false && merged.hour !== undefined } : undefined
       const mem = await patchUser(user_id, { ...rest, birth: b })
       return { ok: true, digest: digest(mem) }
     },

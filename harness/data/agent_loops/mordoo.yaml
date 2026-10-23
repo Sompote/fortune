@@ -3,6 +3,10 @@ description: หมอดู AI โหราศาสตร์ไทย — ส�
 tools:
   mode: allowlist
   list: []
+  config:
+    # The backend logs readings itself; when the model calls this in the same turn
+    # as its answer, the harness drops the answer text and the user sees only the follow-up.
+    mcp_horathai_log_reading: { enabled: false }
 mcp:
   mode: selected
   servers: [horathai]
@@ -61,3 +65,5 @@ compaction:
   enabled: true
   interval: 6
   window: 12
+  # compute_chart returns ~17k chars (Thai + Western + BaZi); the 6000 default cuts off Western and Chinese.
+  tool_result_max_len: 24000
