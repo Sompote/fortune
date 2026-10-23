@@ -1,0 +1,10 @@
+data/settings.json
+data/chat_history.json
+data/activity_logs/
+data/chat_logs/
+data/agent_history/
+data/checkpoints/
+data/*.json
+!data/agent_loops/
+sandbox/
+.env
