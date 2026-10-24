@@ -8,7 +8,7 @@ import { useState } from "react"
 import type { TarotCard } from "./api"
 
 /** Card artwork generated with Codex image generation (scripts/gen_tarot_art.sh → public/tarot/<id>.webp). */
-const ART = (id: string) => `/tarot/${id}.webp`
+const ART = (id: string) => `${import.meta.env.BASE_URL}tarot/${id}.webp`
 
 const ROMAN = ["0", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX", "XXI"]
 const COURT: Record<number, string> = { 11: "♟", 12: "♞", 13: "♛", 14: "♚" }

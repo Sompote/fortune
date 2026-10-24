@@ -33,6 +33,11 @@ export default function TarotTable({ userId, topic, initial, useTarot, onUseTaro
   const reduced = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches
 
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
+  // A draw that arrives while the table sits idle (e.g. #tarot-demo) is shown face up.
+  useEffect(() => {
+    if (!initial || draw || phase !== "idle") return
+    setDraw(initial); setSpread(initial.spread); setQuestion(initial.question ?? ""); setFlipped(initial.cards.map(() => true)); setPhase("done")
+  }, [initial])
   useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }; addEventListener("keydown", k); return () => removeEventListener("keydown", k) }, [onClose])
 
   const n = SPREADS.find(s => s.id === spread)!.n

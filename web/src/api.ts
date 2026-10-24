@@ -67,18 +67,20 @@ async function j<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error((body as any).error || `HTTP ${res.status}`)
   return body as T
 }
+// Vite base ("/mordoo/" in prod) — the app is served under a subpath behind nginx.
+const B = import.meta.env.BASE_URL.replace(/\/$/, "")
 const post = (url: string, body: unknown) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
 
 export const api = {
-  provinces: () => fetch("/api/provinces").then(j<{ provinces: string[] }>),
-  chart: (b: BirthForm) => post("/api/chart", { year: b.year, era: b.era, month: b.month, day: b.day, hour: b.timeKnown ? b.hour : undefined, minute: b.timeKnown ? b.minute : undefined, timeKnown: b.timeKnown, province: b.province, gender: b.gender || undefined }).then(j<ChartResult>),
-  remember: (userId: string, b: BirthForm) => post("/api/tool/remember_user", { user_id: userId, name: b.name || undefined, gender: b.gender || undefined, birth: { year: b.year, era: b.era, month: b.month, day: b.day, hour: b.timeKnown ? b.hour : undefined, minute: b.timeKnown ? b.minute : undefined, timeKnown: b.timeKnown, province: b.province }, addConcern: { topic: b.topic, text: `อยากดูเรื่อง${b.topic}` } }).then(j<{ ok: boolean }>),
-  forget: (id: string) => fetch(`/api/users/${encodeURIComponent(id)}`, { method: "DELETE" }).then(j<{ ok: boolean }>),
-  user: (id: string) => fetch(`/api/users/${encodeURIComponent(id)}`).then(j<{ known: boolean; digest?: string; memory?: { tarot?: TarotDraw[] } }>),
-  tarotDraw: (userId: string, spread: SpreadId, question?: string) => post("/api/tarot/draw", { userId, spread, question: question || undefined }).then(j<TarotDraw>),
-  start: (userId: string) => post("/api/chat/start", { userId }).then(j<{ sessionId: string }>),
-  send: (sessionId: string, userId: string, text: string, useTarot = true) => post("/api/chat/send", { sessionId, userId, text, useTarot }).then(j<{ reply: string; error?: boolean }>),
-  status: (sessionId: string) => fetch(`/api/chat/status/${sessionId}`).then(j<{ tail: string[] }>),
-  history: (sessionId: string) => fetch(`/api/chat/history/${sessionId}`).then(j<{ messages: { role: string; content: string }[] }>),
-  health: () => fetch("/api/health").then(j<{ harness: string }>),
+  provinces: () => fetch(B + "/api/provinces").then(j<{ provinces: string[] }>),
+  chart: (b: BirthForm) => post(B + "/api/chart", { year: b.year, era: b.era, month: b.month, day: b.day, hour: b.timeKnown ? b.hour : undefined, minute: b.timeKnown ? b.minute : undefined, timeKnown: b.timeKnown, province: b.province, gender: b.gender || undefined }).then(j<ChartResult>),
+  remember: (userId: string, b: BirthForm) => post(B + "/api/tool/remember_user", { user_id: userId, name: b.name || undefined, gender: b.gender || undefined, birth: { year: b.year, era: b.era, month: b.month, day: b.day, hour: b.timeKnown ? b.hour : undefined, minute: b.timeKnown ? b.minute : undefined, timeKnown: b.timeKnown, province: b.province }, addConcern: { topic: b.topic, text: `อยากดูเรื่อง${b.topic}` } }).then(j<{ ok: boolean }>),
+  forget: (id: string) => fetch(`${B}/api/users/${encodeURIComponent(id)}`, { method: "DELETE" }).then(j<{ ok: boolean }>),
+  user: (id: string) => fetch(`${B}/api/users/${encodeURIComponent(id)}`).then(j<{ known: boolean; digest?: string; memory?: { tarot?: TarotDraw[]; name?: string; nickname?: string; gender?: string; birth?: { year: number; era: "BE" | "CE"; month: number; day: number; hour?: number; minute?: number; timeKnown: boolean; province?: string } } }>),
+  tarotDraw: (userId: string, spread: SpreadId, question?: string) => post(B + "/api/tarot/draw", { userId, spread, question: question || undefined }).then(j<TarotDraw>),
+  start: (userId: string) => post(B + "/api/chat/start", { userId }).then(j<{ sessionId: string }>),
+  send: (sessionId: string, userId: string, text: string, useTarot = true) => post(B + "/api/chat/send", { sessionId, userId, text, useTarot }).then(j<{ reply: string; error?: boolean }>),
+  status: (sessionId: string) => fetch(`${B}/api/chat/status/${sessionId}`).then(j<{ tail: string[] }>),
+  history: (sessionId: string) => fetch(`${B}/api/chat/history/${sessionId}`).then(j<{ messages: { role: string; content: string }[] }>),
+  health: () => fetch(B + "/api/health").then(j<{ harness: string }>),
 }
