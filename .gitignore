@@ -17,3 +17,5 @@ harness/data/skills/
 harness/data/.mpl_config/
 harness/data/tools/
 *.tsbuildinfo
+# Codex-generated 1024x1536 tarot PNGs (~3.5 MB each); the web uses the WebP copies next to them
+web/public/tarot/raw/

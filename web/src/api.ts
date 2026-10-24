@@ -55,6 +55,13 @@ export interface ChartSummary {
 
 export interface ChartResult { summaryThai: string; summary: ChartSummary }
 
+export type SpreadId = "one" | "three" | "five"
+export interface TarotCard {
+  id: string; name: string; nameThai: string; arcana: "major" | "minor"; number: number; suit?: "wands" | "cups" | "swords" | "pentacles"; glyph: string
+  position: string; positionHint: string; reversed: boolean; meaning: string
+}
+export interface TarotDraw { id: string; date: string; spread: SpreadId; spreadName: string; question?: string; cards: TarotCard[]; summaryThai: string }
+
 async function j<T>(res: Response): Promise<T> {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error((body as any).error || `HTTP ${res.status}`)
@@ -67,9 +74,10 @@ export const api = {
   chart: (b: BirthForm) => post("/api/chart", { year: b.year, era: b.era, month: b.month, day: b.day, hour: b.timeKnown ? b.hour : undefined, minute: b.timeKnown ? b.minute : undefined, timeKnown: b.timeKnown, province: b.province, gender: b.gender || undefined }).then(j<ChartResult>),
   remember: (userId: string, b: BirthForm) => post("/api/tool/remember_user", { user_id: userId, name: b.name || undefined, gender: b.gender || undefined, birth: { year: b.year, era: b.era, month: b.month, day: b.day, hour: b.timeKnown ? b.hour : undefined, minute: b.timeKnown ? b.minute : undefined, timeKnown: b.timeKnown, province: b.province }, addConcern: { topic: b.topic, text: `อยากดูเรื่อง${b.topic}` } }).then(j<{ ok: boolean }>),
   forget: (id: string) => fetch(`/api/users/${encodeURIComponent(id)}`, { method: "DELETE" }).then(j<{ ok: boolean }>),
-  user: (id: string) => fetch(`/api/users/${encodeURIComponent(id)}`).then(j<{ known: boolean; digest?: string }>),
+  user: (id: string) => fetch(`/api/users/${encodeURIComponent(id)}`).then(j<{ known: boolean; digest?: string; memory?: { tarot?: TarotDraw[] } }>),
+  tarotDraw: (userId: string, spread: SpreadId, question?: string) => post("/api/tarot/draw", { userId, spread, question: question || undefined }).then(j<TarotDraw>),
   start: (userId: string) => post("/api/chat/start", { userId }).then(j<{ sessionId: string }>),
-  send: (sessionId: string, userId: string, text: string) => post("/api/chat/send", { sessionId, userId, text }).then(j<{ reply: string; error?: boolean }>),
+  send: (sessionId: string, userId: string, text: string, useTarot = true) => post("/api/chat/send", { sessionId, userId, text, useTarot }).then(j<{ reply: string; error?: boolean }>),
   status: (sessionId: string) => fetch(`/api/chat/status/${sessionId}`).then(j<{ tail: string[] }>),
   history: (sessionId: string) => fetch(`/api/chat/history/${sessionId}`).then(j<{ messages: { role: string; content: string }[] }>),
   health: () => fetch("/api/health").then(j<{ harness: string }>),

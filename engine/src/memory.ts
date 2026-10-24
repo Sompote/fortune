@@ -18,6 +18,16 @@ export interface BirthData {
   province?: string
 }
 
+export interface TarotRecord {
+  id: string
+  date: string
+  spread: string
+  spreadName: string
+  question?: string
+  cards: { id: string; position: string; positionHint: string; name: string; nameThai: string; arcana: string; suit?: string; number: number; glyph: string; reversed: boolean; meaning: string }[]
+  summaryThai: string
+}
+
 export interface UserMemory {
   id: string
   name?: string
@@ -29,6 +39,8 @@ export interface UserMemory {
   concerns: { date: string; topic: string; text: string }[]
   readings: { id: string; date: string; topic: string; summary: string }[]
   feedback: { date: string; readingId?: string; outcome: "matched" | "partly" | "missed" | "unknown"; note: string }[]
+  /** ไพ่ยิปซี draws (last 10). The latest one is offered to the model as extra context. */
+  tarot?: TarotRecord[]
   createdAt: string
   updatedAt: string
 }
@@ -101,6 +113,18 @@ export async function logReading(id: string, topic: string, summary: string): Pr
   return { readingId }
 }
 
+export async function logTarot(id: string, rec: TarotRecord): Promise<void> {
+  const mem = await ensureUser(id)
+  mem.tarot = [...(mem.tarot ?? []), rec].slice(-10)
+  await saveUser(mem)
+}
+
+export function latestTarot(mem: UserMemory | null, maxAgeMs = 24 * 3600_000): TarotRecord | null {
+  const t = mem?.tarot?.at(-1)
+  if (!t) return null
+  return Date.now() - Date.parse(t.date) <= maxAgeMs ? t : null
+}
+
 export async function logFeedback(id: string, outcome: UserMemory["feedback"][number]["outcome"], note: string, readingId?: string): Promise<void> {
   const mem = await ensureUser(id)
   mem.feedback.push({ date: new Date().toISOString(), readingId, outcome, note })
@@ -118,6 +142,8 @@ export function digest(mem: UserMemory): string {
   if (mem.facts.length) lines.push(`ข้อเท็จจริง: ${mem.facts.slice(-10).join("; ")}`)
   if (mem.concerns.length) lines.push(`เรื่องที่เคยถาม: ${mem.concerns.slice(-5).map(c => `${c.date.slice(0, 10)} ${c.topic}: ${c.text}`).join(" | ")}`)
   if (mem.readings.length) lines.push(`คำทำนายล่าสุด: ${mem.readings.slice(-3).map(r => `[${r.id} ${r.date.slice(0, 10)} ${r.topic}] ${r.summary}`).join(" | ")}`)
+  const t = mem.tarot?.at(-1)
+  if (t) lines.push(`ไพ่ยิปซีล่าสุด ${t.date.slice(0, 10)} ${t.spreadName}: ${t.cards.map(c => `${c.position}=${c.nameThai}${c.reversed ? "(กลับหัว)" : ""}`).join(", ")}`)
   if (mem.feedback.length) lines.push(`ผลตอบรับ: ${mem.feedback.slice(-5).map(f => `${f.date.slice(0, 10)} ${f.outcome}${f.readingId ? ` (${f.readingId})` : ""}: ${f.note}`).join(" | ")}`)
   return lines.join("\n")
 }

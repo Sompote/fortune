@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MorDoo ไพ่ยิปซี · สำรับ 78 ใบ</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600&family=Noto+Serif+Thai:wght@700&display=swap" rel="stylesheet" />
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: radial-gradient(ellipse at 50% 0%, #2a1a45, #0d0914 60%); color: #f3e3b2; font-family: "Noto Sans Thai", system-ui, sans-serif; padding: 24px 16px 60px; }
+  h1 { font-family: "Noto Serif Thai", serif; text-align: center; letter-spacing: 2px; text-shadow: 0 0 18px rgba(216,184,106,.6); margin: 8px 0 4px; }
+  p.sub { text-align: center; color: #b9a98a; margin: 0 0 24px; font-size: 14px; }
+  h2 { font-family: "Noto Serif Thai", serif; color: #d8b86a; font-size: 18px; margin: 28px 0 10px; letter-spacing: 1px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+  figure { margin: 0; text-align: center; }
+  img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.55), 0 0 0 1px rgba(216,184,106,.4); transition: transform .2s; display: block; }
+  figure:hover img { transform: translateY(-4px) scale(1.02); }
+  figcaption { font-size: 13px; margin-top: 6px; } figcaption small { display: block; color: #b9a98a; font-size: 11px; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+<h1>☽ ไพ่ยิปซี MorDoo ☾</h1>
+<p class="sub">ภาพไพ่ 78 ใบ + หลังไพ่ สร้างด้วย Codex image generation · <a href="/#tarot" style="color:#d8b86a">เปิดโต๊ะไพ่</a></p>
+<div id="root"></div>
+<script>
+const SUIT = { wands: "ไม้เท้า (Wands)", cups: "ถ้วย (Cups)", swords: "ดาบ (Swords)", pentacles: "เหรียญ (Pentacles)" }
+fetch("/api/tarot/deck").then(r => r.json()).then(({ deck }) => {
+  const root = document.getElementById("root")
+  const groups = [["หลังไพ่ และไพ่ชุดใหญ่ (Major Arcana)", [{ id: "back", nameThai: "หลังไพ่", name: "Card back" }, ...deck.filter(c => c.arcana === "major")]],
+    ...Object.keys(SUIT).map(s => [SUIT[s], deck.filter(c => c.suit === s)])]
+  for (const [title, cards] of groups) {
+    const h = document.createElement("h2"); h.textContent = title; root.appendChild(h)
+    const g = document.createElement("div"); g.className = "grid"
+    for (const c of cards) {
+      const f = document.createElement("figure")
+      f.innerHTML = `<img loading="lazy" src="/tarot/${c.id}.webp" alt="${c.nameThai}"><figcaption>${c.nameThai}<small>${c.name}</small></figcaption>`
+      g.appendChild(f)
+    }
+    root.appendChild(g)
+  }
+}).catch(() => { document.getElementById("root").textContent = "โหลดข้อมูลสำรับไม่ได้ (ต้องเปิดผ่านเซิร์ฟเวอร์ของแอป)" })
+</script>
+</body>
+</html>

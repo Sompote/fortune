@@ -6,6 +6,8 @@
  *  - /api/chat/start       create a TigrimOS session for this user
  *  - /api/chat/send        forward a message to TigrimOS (profile "mordoo") and wait for the reply
  *  - /api/chat/status/:id  activity tail while the agent works
+ *  - /api/tarot/draw       shuffle + draw ไพ่ยิปซี for the animated table; stored in user memory
+ *  - /api/tarot/deck       the 78-card deck and spread definitions (for the renderer)
  * Serves ../web/dist when it exists (production).
  */
 import express from "express"
@@ -15,7 +17,8 @@ import { existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { callTool } from "./tools.js"
 import { computeChart, provinces } from "./chart.js"
-import { loadUser, digest, logReading, deleteUser } from "./memory.js"
+import { loadUser, digest, logReading, logTarot, latestTarot, deleteUser } from "./memory.js"
+import { drawTarot, DECK, SPREADS } from "./tarot.js"
 
 const PORT = Number(process.env.MORDOO_PORT || 8790)
 const TIGRIMOS_URL = (process.env.TIGRIMOS_URL || "http://127.0.0.1:3001").replace(/\/$/, "")
@@ -45,6 +48,17 @@ app.get("/api/provinces", (_req, res) => res.json({ provinces: provinces() }))
 
 app.post("/api/chart", (req, res) => {
   try { res.json(computeChart(req.body)) } catch (e) { res.status(400).json({ error: (e as Error).message }) }
+})
+
+app.get("/api/tarot/deck", (_req, res) => res.json({ deck: DECK, spreads: SPREADS }))
+
+app.post("/api/tarot/draw", async (req, res) => {
+  try {
+    const { userId, spread, question } = req.body as { userId?: string; spread?: "one" | "three" | "five"; question?: string }
+    const d = drawTarot({ spread, question })
+    if (userId) await logTarot(userId, d)
+    res.json(d)
+  } catch (e) { res.status(400).json({ error: (e as Error).message }) }
 })
 
 app.post("/api/tool/:name", async (req, res) => {
@@ -89,7 +103,7 @@ function dedupeReply(t: string): string {
 const topicOf = (t: string): string => TOPIC_WORDS.find(([, re]) => re.test(t))?.[0] ?? "ทั่วไป"
 
 /** Context the backend computes so the model does not spend LLM rounds on recall/compute. */
-async function buildContext(userId: string): Promise<{ block: string; hasChart: boolean }> {
+async function buildContext(userId: string, useTarot = true): Promise<{ block: string; hasChart: boolean }> {
   const mem = await loadUser(userId)
   const lines: string[] = ["[บริบทจากระบบ — ผู้ใช้มองไม่เห็นส่วนนี้ ไม่ต้องเรียก recall_user หรือ compute_chart ซ้ำ ใช้ข้อมูลนี้ได้เลย]"]
   let hasChart = false
@@ -106,17 +120,20 @@ async function buildContext(userId: string): Promise<{ block: string; hasChart: 
       } catch (e) { lines.push(`ผูกดวงไม่สำเร็จ: ${(e as Error).message}`) }
     }
   }
+  const t = useTarot ? latestTarot(mem) : null
+  if (t) lines.push("ไพ่ยิปซีที่ผู้ใช้เปิดไว้ (ใช้ร่วมทำนายเป็นหัวข้อ **ไพ่ยิปซี:** และนำมาสรุปรวมกับดวง):\n" + t.summaryThai)
+  else if (!useTarot) lines.push("ผู้ใช้ปิดตัวเลือกไพ่ยิปซี: ไม่ต้องพูดถึงไพ่")
   lines.push("[จบบริบทจากระบบ]")
   return { block: lines.join("\n"), hasChart }
 }
 
 app.post("/api/chat/send", async (req, res) => {
-  const { sessionId, userId, text } = req.body as { sessionId?: string; userId?: string; text?: string }
+  const { sessionId, userId, text, useTarot } = req.body as { sessionId?: string; userId?: string; text?: string; useTarot?: boolean }
   if (!sessionId || !userId || !text) return res.status(400).json({ error: "sessionId, userId and text are required" })
   try {
     const before = await tg<{ messages: TgMessage[] }>("GET", `/api/chat/sessions/${sessionId}`)
     const n0 = before.messages.length
-    const ctx = await buildContext(userId)
+    const ctx = await buildContext(userId, useTarot !== false)
     const message = `[user_id=${userId}] ${text}\n\n${ctx.block}`
     const ack = await tg<any>("POST", `/api/chat/sessions/${sessionId}/messages`, { message, agent_loop_profile: PROFILE, agent_mode: "single" })
     if (ack.content && !ack.status) return res.json({ reply: ack.content, error: true })
@@ -161,8 +178,9 @@ app.get("/api/chat/history/:id", async (req, res) => {
 const here = path.dirname(fileURLToPath(import.meta.url))
 const webDist = path.resolve(here, "../../web/dist")
 if (existsSync(webDist)) {
-  app.use(express.static(webDist))
-  app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(path.join(webDist, "index.html")))
+  // Hashed assets may be cached for a long time; index.html must always be fetched fresh so a rebuild shows up on reload.
+  app.use(express.static(webDist, { index: false, maxAge: "30d", setHeaders: (res, p) => { if (p.endsWith(".html")) res.setHeader("Cache-Control", "no-cache") } }))
+  app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(path.join(webDist, "index.html"), { headers: { "Cache-Control": "no-cache" } }))
 }
 
 app.listen(PORT, () => console.log(`[mordoo] backend on http://127.0.0.1:${PORT} → harness ${TIGRIMOS_URL} profile ${PROFILE}${existsSync(webDist) ? " (serving web/dist)" : ""}`))

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import { api } from "./api"
-import type { BirthForm, ChartResult } from "./api"
+import type { BirthForm, ChartResult, TarotDraw } from "./api"
+import TarotTable from "./TarotTable"
+import { TarotCardView } from "./TarotCardArt"
 import RasiChart from "./RasiChart"
 import SevenNineTable from "./SevenNineTable"
 import WesternCard from "./WesternCard"
@@ -10,9 +12,9 @@ import ChineseCard from "./ChineseCard"
 type Msg = { role: "user" | "assistant" | "system"; content: string }
 
 const TAKSA_LABEL: Record<string, string> = { boriwan: "บริวาร", ayu: "อายุ", det: "เดช", si: "ศรี", mula: "มูละ", utsaha: "อุตสาหะ", montri: "มนตรี", kalakini: "กาลกิณี" }
-const ACTIVITY: [RegExp, string][] = [[/compute_chart|seven_nine/, "กำลังผูกดวง"], [/recall_user/, "กำลังนึกถึงคุณ"], [/remember_user/, "กำลังจดจำข้อมูล"], [/log_reading|log_feedback/, "กำลังบันทึก"], [/No tool_calls|returning text/, "กำลังเขียนคำทำนาย"]]
+const ACTIVITY: [RegExp, string][] = [[/compute_chart|seven_nine/, "กำลังผูกดวง"], [/recall_user/, "กำลังนึกถึงคุณ"], [/remember_user/, "กำลังจดจำข้อมูล"], [/log_reading|log_feedback/, "กำลังบันทึก"], [/draw_tarot/, "กำลังสับไพ่ยิปซี"], [/No tool_calls|returning text/, "กำลังเขียนคำทำนาย"]]
 const TOPICS = ["การงาน", "การเงิน", "ความรัก", "สุขภาพ", "ครอบครัว", "การเรียน", "ดวงรวมปีนี้"]
-const LS = { user: "mordoo.userId", session: "mordoo.sessionId", form: "mordoo.form" }
+const LS = { user: "mordoo.userId", session: "mordoo.sessionId", form: "mordoo.form", useTarot: "mordoo.useTarot" }
 
 function uid(): string {
   try { const v = localStorage.getItem(LS.user); if (v) return v } catch {}
@@ -40,11 +42,25 @@ export default function App() {
   const [activity, setActivity] = useState("")
   const [harness, setHarness] = useState("")
   const [known, setKnown] = useState<string | null>(null)
+  const [tarot, setTarot] = useState<TarotDraw | null>(null)
+  const [tableOpen, setTableOpen] = useState(() => typeof location !== "undefined" && /^#tarot/.test(location.hash))
+  const [sideOpen, setSideOpen] = useState(false)
+  const [useTarot, setUseTarotState] = useState<boolean>(() => { try { return localStorage.getItem(LS.useTarot) !== "0" } catch { return true } })
   const pane = useRef<HTMLDivElement>(null)
+  const setUseTarot = (v: boolean) => { setUseTarotState(v); try { localStorage.setItem(LS.useTarot, v ? "1" : "0") } catch {} }
 
   useEffect(() => { api.provinces().then(r => setProvinces(r.provinces)).catch(() => {}) }, [])
+  // #tarot-demo opens the table with a sample spread already dealt (not stored to memory); used for previews.
+  useEffect(() => { if (location.hash === "#tarot-demo") api.tarotDraw("", "three", "ตัวอย่าง").then(setTarot).catch(() => {}) }, [])
   useEffect(() => { api.health().then(r => setHarness(r.harness)).catch(() => setHarness("backend unreachable")) }, [])
-  useEffect(() => { api.user(userId).then(r => setKnown(r.known ? r.digest ?? "" : null)).catch(() => {}) }, [userId, busy])
+  useEffect(() => {
+    api.user(userId).then(r => {
+      setKnown(r.known ? r.digest ?? "" : null)
+      // Cards the model drew in chat (draw_tarot) land in memory; show them on the page too.
+      const last = r.memory?.tarot?.at(-1)
+      if (last && Date.now() - Date.parse(last.date) < 24 * 3600_000) setTarot(t => (t?.id === last.id ? t : last))
+    }).catch(() => {})
+  }, [userId, busy])
   useEffect(() => {
     if (!sessionId) return
     api.history(sessionId).then(r => setMsgs(r.messages.filter(m => m.role === "user" || m.role === "assistant") as Msg[])).catch(() => { setSessionId(null); try { localStorage.removeItem(LS.session) } catch {} })
@@ -73,7 +89,7 @@ export default function App() {
     setBusy(true); setActivity("")
     try {
       const sid = await ensureSession()
-      const r = await api.send(sid, userId, text)
+      const r = await api.send(sid, userId, text, useTarot)
       setMsgs(m => [...m, { role: "assistant", content: r.reply }])
     } catch (e) {
       setMsgs(m => [...m, { role: "system", content: `เกิดข้อผิดพลาด: ${(e as Error).message}` }])
@@ -91,6 +107,12 @@ export default function App() {
     } catch (e) { setChartErr((e as Error).message) }
   }
 
+  function combineTarot(d: TarotDraw) {
+    setTableOpen(false)
+    const q = d.question ? `คำถามคือ "${d.question}" ` : ""
+    send(`หมอช่วยอ่านไพ่ยิปซีที่เพิ่งเปิด (${d.spreadName}) ${q}ประกอบกับดวงเรื่อง${form.topic}ให้หน่อยครับ/ค่ะ`)
+  }
+
   function newChat() {
     setSessionId(null); setMsgs([])
     try { localStorage.removeItem(LS.session) } catch {}
@@ -100,36 +122,22 @@ export default function App() {
     if (busy) return
     try { await api.forget(userId) } catch {}
     try { localStorage.removeItem(LS.user); localStorage.removeItem(LS.session); localStorage.removeItem(LS.form) } catch {}
-    setSessionId(null); setMsgs([]); setChart(null); setKnown(null); setConfirmReset(false)
+    setSessionId(null); setMsgs([]); setChart(null); setKnown(null); setConfirmReset(false); setTarot(null)
     setForm(savedForm()); setUserId(uid())
   }
 
   const s = chart?.summary
   return (
     <div className="app">
-      <header className="top">
-        <div><h1>MorDoo หมอดู AI โหราศาสตร์ไทย</h1><div className="status">สุริยยาตร์ · ลัคนา · ทักษา · เลข 7 ตัว 9 ฐาน · {harness === "ok" ? "เชื่อมต่อหมอแล้ว" : `หมอยังไม่พร้อม (${harness || "…"})`}</div></div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn secondary" onClick={newChat} disabled={busy}>เริ่มบทสนทนาใหม่</button>
-          {confirmReset
-            ? <><button className="btn" onClick={newUser} disabled={busy}>ยืนยันลบทั้งหมด</button><button className="btn secondary" onClick={() => setConfirmReset(false)}>ยกเลิก</button></>
-            : <button className="btn secondary" onClick={() => setConfirmReset(true)} disabled={busy} title="ลบประวัติแชตและความจำของผู้ใช้นี้ แล้วเริ่มเป็นผู้ใช้ใหม่">ผู้ใช้ใหม่</button>}
-        </div>
-      </header>
       <div className="layout">
-        <main className="card chat">
-          <div className="messages" ref={pane}>
-            {msgs.length === 0 && <div className="msg system">กรอกวันเกิดทางขวา (หรือด้านบนบนมือถือ) แล้วกด "ผูกดวงและเริ่มคุย" หรือพิมพ์ทักทายหมอได้เลย</div>}
-            {msgs.map((m, i) => m.role === "assistant" ? <div key={i} className="msg assistant"><ReactMarkdown>{m.content}</ReactMarkdown></div> : <div key={i} className={`msg ${m.role}`}>{m.content}</div>)}
-            {busy && <div className="typing">{ACTIVITY.find(([re]) => re.test(activity))?.[1] ?? "หมอกำลังดูดวง"}…</div>}
+        <aside className={`sidebar ${sideOpen ? "open" : ""}`}>
+          <div className="sb-top">
+            <div className="brand"><span className="brand-mark">☽</span> MorDoo</div>
+            <button className="icon-btn" onClick={() => setSideOpen(false)} aria-label="ปิดแผง">✕</button>
           </div>
-          <form className="composer" onSubmit={e => { e.preventDefault(); send(input) }}>
-            <textarea value={input} onChange={e => setInput(e.target.value)} placeholder="พิมพ์ข้อความถึงหมอ…" onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input) } }} />
-            <button className="btn" disabled={busy || !input.trim()}>ส่ง</button>
-          </form>
-        </main>
-        <aside className="side">
-          <div className="card">
+          <button className="sb-new" onClick={newChat} disabled={busy}><span>＋</span> แชตใหม่</button>
+          <div className="sb-scroll">
+          <div className="panel">
             <h3>ข้อมูลเกิด</h3>
             <div className="row">
               <div style={{ gridColumn: "1 / 3" }}><label>ชื่อหรือชื่อเล่น</label><input value={form.name} onChange={e => set("name", e.target.value)} placeholder="เช่น มะลิ" /></div>
@@ -149,12 +157,27 @@ export default function App() {
               <div><label>จังหวัดที่เกิด</label><select value={form.province} onChange={e => set("province", e.target.value)}>{(provinces.length ? provinces : [form.province]).map(p => <option key={p}>{p}</option>)}</select></div>
               <div><label>เรื่องที่อยากดู</label><select value={form.topic} onChange={e => set("topic", e.target.value)}>{TOPICS.map(t => <option key={t}>{t}</option>)}</select></div>
             </div>
-            <button className="btn" onClick={computeAndStart} disabled={busy}>ผูกดวงและเริ่มคุย</button>
+            <button className="btn primary" onClick={computeAndStart} disabled={busy}>ผูกดวงและเริ่มคุย</button>
             {chartErr && <p className="error">{chartErr}</p>}
             {known !== null && <details style={{ marginTop: 10 }}><summary>หมอจำคุณได้</summary><pre className="summary">{known}</pre></details>}
           </div>
+          <div className="panel tarot-side">
+            <h3>ไพ่ยิปซี <span className="muted small">(ตัวเลือกเสริม)</span></h3>
+            {tarot ? (
+              <>
+                <p className="muted small">{tarot.spreadName}{tarot.question ? ` · "${tarot.question}"` : ""} · {new Date(tarot.date).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</p>
+                <div className="tarot-mini">{tarot.cards.map((c, i) => <TarotCardView key={i} card={c} flipped small />)}</div>
+                <ul className="planet-list">{tarot.cards.map((c, i) => <li key={i}><b>{c.position}</b> {c.nameThai}{c.reversed ? " (กลับหัว)" : ""}</li>)}</ul>
+              </>
+            ) : <p className="muted small">สับไพ่ 1, 3 หรือ 5 ใบ แล้วให้หมออ่านร่วมกับดวงไทย สากล และจีน</p>}
+            <label className="tarot-opt-side"><input type="checkbox" checked={useTarot} onChange={e => setUseTarot(e.target.checked)} /> ใช้ไพ่ร่วมกับคำทำนายหลัก</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="btn primary" onClick={() => setTableOpen(true)} disabled={busy}>{tarot ? "เปิดโต๊ะไพ่อีกครั้ง" : "เปิดโต๊ะไพ่"}</button>
+              {tarot && <button className="btn ghost" onClick={() => combineTarot(tarot)} disabled={busy}>ให้หมอทำนายรวมกับดวง</button>}
+            </div>
+          </div>
           {s && (
-            <div className="card">
+            <div className="panel">
               <h3>ราศีจักร</h3>
               <p className="muted small">{s.birth.dayLabel} วัน{s.birth.weekdayAstro}{s.birth.lunar ? ` ${s.birth.lunar}` : ""} ปี{s.birth.naksat}</p>
               <RasiChart channels={s.rasiChannels} centerLabel={s.ascendant ? `ลั ${s.ascendant.sign}` : "ไม่ใช้ลัคนา"} />
@@ -168,8 +191,54 @@ export default function App() {
           {s?.western && <WesternCard w={s.western} timeKnown={s.birth.timeKnown} />}
           {s?.chinese && <ChineseCard c={s.chinese} />}
           {s?.sevenNine && <SevenNineTable data={s.sevenNine} />}
+          </div>
+          <div className="sb-foot">
+            {confirmReset
+              ? <div className="sb-row"><button className="btn danger" onClick={newUser} disabled={busy}>ยืนยันลบทั้งหมด</button><button className="btn ghost" onClick={() => setConfirmReset(false)}>ยกเลิก</button></div>
+              : <button className="btn ghost" onClick={() => setConfirmReset(true)} disabled={busy} title="ลบประวัติแชตและความจำของผู้ใช้นี้ แล้วเริ่มเป็นผู้ใช้ใหม่">ผู้ใช้ใหม่ · ลบข้อมูล</button>}
+            <div className="sb-status"><span className={`dot ${harness === "ok" ? "ok" : ""}`} /> {harness === "ok" ? "เชื่อมต่อหมอแล้ว" : `หมอยังไม่พร้อม (${harness || "…"})`}</div>
+          </div>
         </aside>
+        {sideOpen && <div className="scrim" onClick={() => setSideOpen(false)} />}
+        <main className="main">
+          <header className="top">
+            <div className="top-left">
+              <button className="icon-btn menu" onClick={() => setSideOpen(o => !o)} aria-label="เปิดแผงข้อมูล">☰</button>
+              <div className="model-pill">หมอมะลิ <span className="muted">· โหราศาสตร์ไทย สากล จีน ไพ่ยิปซี</span></div>
+            </div>
+            <div className="top-right"><button className="btn ghost small" onClick={newChat} disabled={busy}>แชตใหม่</button></div>
+          </header>
+          <div className="chat">
+          <div className="messages" ref={pane}>
+            <div className="thread">
+              {msgs.length === 0 && (
+                <div className="empty">
+                                    <h2>สวัสดีค่ะ{form.name ? ` คุณ${form.name}` : ""} วันนี้อยากให้หมอดูเรื่องอะไรดี</h2>
+                  <p className="muted">กรอกวันเกิดในแผงด้านข้าง แล้วกด "ผูกดวงและเริ่มคุย" หรือเลือกคำถามด้านล่าง</p>
+                  <div className="suggest">
+                    {["ดูดวงการงานปีนี้", "ความรักช่วงนี้เป็นอย่างไร", "การเงินครึ่งปีหลัง", "เปิดไพ่ยิปซี 3 ใบให้หน่อย"].map(t => <button key={t} className="suggest-chip" onClick={() => send(t)} disabled={busy}>{t}</button>)}
+                  </div>
+                </div>
+              )}
+              {msgs.map((m, i) => m.role === "assistant"
+                ? <div key={i} className="row assistant"><div className="bubble assistant"><ReactMarkdown>{m.content}</ReactMarkdown></div></div>
+                : m.role === "user"
+                  ? <div key={i} className="row user"><div className="bubble user">{m.content}</div></div>
+                  : <div key={i} className="row system"><div className="bubble system">{m.content}</div></div>)}
+              {busy && <div className="row assistant"><div className="typing"><span className="dots"><i /><i /><i /></span>{ACTIVITY.find(([re]) => re.test(activity))?.[1] ?? "หมอกำลังดูดวง"}</div></div>}
+            </div>
+          </div>
+          <form className="composer" onSubmit={e => { e.preventDefault(); send(input) }}>
+            <div className="composer-box">
+              <textarea rows={1} value={input} onChange={e => { setInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px" }} placeholder="ถามอะไรก็ได้" onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); (e.target as HTMLTextAreaElement).style.height = "auto" } }} />
+              <button className="send" disabled={busy || !input.trim()} aria-label="ส่ง">↑</button>
+            </div>
+            <p className="disclaimer">คำทำนายเป็นแนวทางเพื่อการตัดสินใจ ไม่ใช่คำรับประกัน</p>
+          </form>
+          </div>
+        </main>
       </div>
+      {tableOpen && <TarotTable key={tarot?.id ?? "none"} userId={userId} topic={form.topic} initial={tarot} useTarot={useTarot} onUseTarot={setUseTarot} onDraw={setTarot} onCombine={combineTarot} onClose={() => setTableOpen(false)} busy={busy} />}
     </div>
   )
 }

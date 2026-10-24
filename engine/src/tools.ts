@@ -5,7 +5,8 @@
 import { z } from "zod"
 import { computeChart, provinces } from "./chart.js"
 import { sevenNine, naksatIndexFor } from "./seven.js"
-import { ensureUser, patchUser, logReading, logFeedback, digest, loadUser } from "./memory.js"
+import { ensureUser, patchUser, logReading, logFeedback, logTarot, digest, loadUser } from "./memory.js"
+import { drawTarot, SPREADS } from "./tarot.js"
 
 export const birthSchema = z.object({
   year: z.number().int().describe("ปีเกิด ตามศักราชที่ระบุใน era"),
@@ -77,6 +78,19 @@ export const toolDefs = {
       const b = merged ? { ...merged, timeKnown: merged.timeKnown !== false && merged.hour !== undefined } : undefined
       const mem = await patchUser(user_id, { ...rest, birth: b })
       return { ok: true, digest: digest(mem) }
+    },
+  },
+  draw_tarot: {
+    description: "สับและเปิดไพ่ยิปซี (ทาโรต์ 78 ใบ) ด้วยระบบสุ่มของเครื่อง คืนไพ่แต่ละตำแหน่งพร้อมหัวตั้ง/กลับหัวและความหมายย่อ ใช้เมื่อผู้ใช้ขอเปิดไพ่ หรือต้องการมุมมองเพิ่มจากดวง ห้ามสุ่มไพ่เอง ผลจะถูกบันทึกในความจำผู้ใช้และแสดงบนหน้าเว็บอัตโนมัติ",
+    schema: z.object({
+      user_id: z.string().min(1),
+      spread: z.enum(["one", "three", "five"]).optional().describe("one=ไพ่ใบเดียว, three=อดีต ปัจจุบัน อนาคต (ค่าเริ่มต้น), five=กางเขนห้าใบ"),
+      question: z.string().optional().describe("คำถามของผู้ใช้ สั้น ๆ"),
+    }),
+    handler: async (a: { user_id: string; spread?: "one" | "three" | "five"; question?: string }) => {
+      const d = drawTarot({ spread: a.spread, question: a.question })
+      await logTarot(a.user_id, d)
+      return { summaryThai: d.summaryThai, draw: d, spreads: Object.fromEntries(Object.entries(SPREADS).map(([k, v]) => [k, v.name])) }
     },
   },
   log_reading: {

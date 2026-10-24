@@ -19,7 +19,7 @@ web (React/Vite)  ──HTTP──▶  engine/server.ts (Express BFF)  ──HTT
 |---|---|
 | `engine/` | Node + TypeScript. `thai-astrology` (MIT, Suriyayatra) wrapper, `circular-natal-horoscope-js` (Western, astronomia ephemeris, timezone from birthplace), `lunar-javascript` (BaZi, solar terms, luck pillars), my เลข 7 ตัว 9 ฐาน module, JSON user memory, MCP stdio server, HTTP backend. |
 | `harness/` | Self-contained TigrimOS data dir: `data/agent_loops/mordoo.yaml` (persona, interview flow, reading rules, safety), `setup.sh` writes `data/settings.json` from `.env`, `run.sh` starts the headless server. Your global TigrimOS data is not touched. |
-| `web/` | React chat UI: intake form, ราศีจักร wheel, ทักษา chips, 7 ตัว 9 ฐาน table, memory digest, chat with progress. |
+| `web/` | React chat UI: intake form, ราศีจักร wheel, ทักษา chips, 7 ตัว 9 ฐาน table, memory digest, chat with progress, and the animated ไพ่ยิปซี table (`TarotTable.tsx`, procedural SVG card art in `TarotCardArt.tsx`). |
 | `market_gap_report.md` | The market research that motivated this build. |
 
 ## Run (dev)
@@ -38,6 +38,27 @@ library's documented example (ลัคนา กันย์, อาทิต�
 Chiang Mai) and a published เลข 7 ตัว 9 ฐาน worked example.
 
 Production: `cd web && npm run build`, then `node engine/dist/server.js` serves `web/dist` on :8790.
+
+## ไพ่ยิปซี (tarot, optional)
+
+The engine owns a 78-card Rider–Waite deck with Thai names and short upright/reversed meanings
+(`engine/src/tarot.ts`). A draw is a Fisher–Yates shuffle with `crypto.randomInt`, 30 % of cards
+reversed, in one of three spreads: one card, อดีต–ปัจจุบัน–อนาคต, or a five-card cross
+(สถานการณ์ อุปสรรค รากเหง้า คำแนะนำ ผลลัพธ์). The web app opens a full-page table (dark, smoke,
+candle flicker, turning sigil ring, shuffle and deal animations, 3-D flip per card) and calls
+`POST /api/tarot/draw`, so the cards the user sees are the cards the model reads. Each draw is
+stored in the user's memory (`tarot`, last 10). The backend puts the latest draw (under 24 h old)
+into the system context block and the `mordoo` prompt adds a **ไพ่ยิปซี:** section between ดวงจีน
+and สรุปรวม, using only the engine's meanings. Card artwork: 78 faces plus the back were generated with Codex image generation
+(`web/scripts/gen_tarot_art.sh`, one Rider–Waite scene prompt per card, consistent engraved indigo-and-gold
+style, no text in the image) and shrunk to 480×720 WebP with `web/scripts/shrink_tarot_art.sh`
+(`web/public/tarot/<id>.webp`, about 9.6 MB for the deck; the 1024×1536 PNGs stay in `web/public/tarot/raw/`,
+which is git-ignored). The React card overlays the Thai name band and rank badge, and falls back to the
+procedural SVG face if an image is missing. `/tarot/gallery.html` shows the whole deck; `/#tarot` opens the
+table, `/#tarot-demo` opens it with a sample spread. The option lives in the side panel and on the table
+("ใช้ไพ่ร่วมกับคำทำนายหลัก", stored in localStorage): when off, the request sends `useTarot: false`
+and the prompt is told not to mention cards. The model can also draw in chat with the MCP tool
+`draw_tarot`; the page picks the result up from memory and shows it in the side panel.
 
 ## Reasoning models (Kimi-k3 and similar)
 
